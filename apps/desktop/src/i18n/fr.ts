@@ -970,6 +970,18 @@ export const frOverrides = {
       }
     },
     vault: {
+      editOrigins: 'Modifier les origines',
+      editOriginsTitle: 'Modifier les origines de connexion',
+      originsSaved: 'Origines de connexion mises à jour.',
+      additionalOriginsField: 'Origines exactes supplémentaires',
+      additionalOriginsHint: 'Une URL par ligne. Seules ces origines exactes sont autorisées.',
+      wildcardOriginsField: 'Origines avec joker',
+      wildcardOriginsHint:
+        'Utilisez https://*.example.com. Correspond aux sous-domaines sur le port indiqué, mais pas à example.com lui-même.',
+      wildcardWarning:
+        'Tous les sous-domaines correspondants peuvent recevoir ce mot de passe. Activez cette option uniquement pour les domaines auxquels vous faites confiance, y compris leurs sous-domaines délégués.',
+      wildcardAcknowledgement: 'Je fais confiance à chaque sous-domaine correspondant pour recevoir ce mot de passe.',
+      wildcardBadge: 'Joker',
       title: 'Mots de passe et identifiants',
       blurb:
         "Demandez à l'agent de se connecter à un site : il vous demandera l'identifiant la première fois, puis pourra le réutiliser. Les mots de passe sont chiffrés sur cet ordinateur et remplis directement dans la page ; le modèle ne les voit jamais.",

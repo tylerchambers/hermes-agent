@@ -436,7 +436,10 @@ def _(rid, params: dict) -> dict:
     """What THIS BUILD enforces (a client withholds unless advertised), sourced from the enforcing
     module, never config: a believed-but-absent capability is worse."""
     from hermes_cli.active_sessions import PER_SESSION_EXCLUSIVE_SUBMIT
-    return _ok(rid, {"per_session_exclusive_submit": bool(PER_SESSION_EXCLUSIVE_SUBMIT)})
+    return _ok(rid, {
+        "per_session_exclusive_submit": bool(PER_SESSION_EXCLUSIVE_SUBMIT),
+        "vault_origin_rules": "vault.update_origins" in _methods,
+    })
 
 
 @method("client.capabilities")

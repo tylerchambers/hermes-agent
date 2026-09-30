@@ -34,6 +34,58 @@ fills the password through Hermes. The tool result it sees is
 `{filled_fields: 1, origin: "https://github.com"}`; the password is also
 registered with the redactor so a later page read cannot echo it back.
 
+## One login, several destinations
+
+Local logins can save several **exact origins** on one handle, without copying the
+password. For example, save `https://amazon.com` as the primary origin and
+`https://www.amazon.com` as an additional exact origin. Neither grants the other
+automatically. Full URLs are accepted; paths, queries and fragments are removed.
+Scheme, hostname and port define the permission. HTTP never follows from an HTTPS
+grant, and a trailing DNS dot remains a distinct origin.
+
+Use **Desktop → Settings → Passwords & Logins → Edit origins**, or
+`hermes vault edit <handle>`, to change an existing local login's destinations.
+These edits preserve its handle, identifier, password and authenticator key.
+They never ask you to enter the secrets again. External-manager entries are
+read-only here; change their saved websites in the password manager.
+
+Desktop shows the additional-origin fields and **Edit origins** only after the
+connected backend confirms support. With an older backend, single-origin logins
+can still be added normally; update that backend with `hermes update` and reconnect
+to manage multiple origins. A failed save is never retried with fewer permissions.
+
+### Optional HTTPS subdomain wildcards
+
+The separate **Wildcard origins** field accepts explicit rules such as
+`https://*.example.com`. This allows `login.example.com` and
+`deep.login.example.com`, but **not** `example.com`. List the apex explicitly if
+you want it. Ports are pinned: `https://*.example.com:8443` permits only port
+8443, not the default HTTPS port. Lookalikes and unrelated domains never match.
+
+**All matching subdomains can receive this password**, including delegated
+subdomains. Enable this only for domains whose entire matching scope you trust.
+Desktop requires an unchecked-by-default acknowledgement; the CLI asks for
+explicit confirmation. A changed wildcard requires consent again.
+
+Wildcards cannot cover public or private suffixes (`*.com`, `*.co.uk`,
+`*.github.io`, `*.blogspot.com`), IP addresses or unknown/internal suffixes.
+`*.tenant.github.io` is allowed. Matching also refuses a nested private-suffix
+tenant boundary. Validation uses the dependency's bundled Public Suffix List
+offline; newly introduced suffixes require a package update. If that packaged
+policy is unavailable, wildcard filling fails closed; run `hermes pm repair`.
+Exact-only logins do not need the suffix list.
+
+Existing logins and save-on-page prompts stay exact-origin only. The agent cannot
+expand permissions through fill or save-login arguments. These permissions apply
+to **login password filling**, not card/address grants or verification-code filling.
+
+In the CLI, enter additional exact origins and wildcard origins separately, one
+per line. An empty line finishes each list. During edits, an empty first line
+keeps a list, a lone `-` clears it, and other input replaces it. An empty primary
+origin keeps the current primary; the primary exact grant is always retained.
+Review the normalized scope before confirming.
+
+
 ## Two-factor codes
 
 Sites that ask for a code after the password are handled the same way:
@@ -80,9 +132,9 @@ cannot spend. Address fills need no confirmation.
 ## Managing what's saved
 
 - **Desktop → Settings → Passwords & Logins**: everything saved, the detected
-  password managers with Unlock/Lock, Add, Remove.
-- **CLI**: `hermes vault list`, `hermes vault add`, `hermes vault rm <handle>`,
-  `hermes vault sources`.
+  password managers with Unlock/Lock, Add, Edit origins (local logins), Remove.
+- **CLI**: `hermes vault list`, `hermes vault add`, `hermes vault edit <handle>`,
+  `hermes vault rm <handle>`, `hermes vault sources`.
 
 Items live encrypted under `~/.hermes/vault/` (Fernet key + vault file, both
 `0600`), scoped to the profile. Labels, site origins and login identifiers are
@@ -111,9 +163,15 @@ vault:
 
 **Does:** the password never enters the model's context through Hermes: not in
 tool results, logs, the session database, or the CLI arguments of any process.
-Fills happen over the supervised browser session's direct CDP socket and are
-refused unless the page origin exactly matches the saved origin, checked again
-inside the page immediately before the write.
+Password fills happen over the supervised browser session's direct CDP socket
+and are refused unless the concrete page origin matches a saved exact origin or
+an explicitly configured wildcard grant. The script checks that **same concrete
+origin** again immediately before writing: navigation to another allowed subdomain
+still aborts the fill.
+
+The current page's path, query and fragment do not change this check: a URL such
+as `https://example.com/login?next=/reports/*` still has the exact origin
+`https://example.com`. This does not turn `*` in a page URL into a wildcard grant.
 
 **Does not:** protect against the page itself. Once a password is typed into a
 site, that site (and any script it runs) has it, exactly as when you type it

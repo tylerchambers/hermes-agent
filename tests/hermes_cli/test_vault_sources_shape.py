@@ -47,3 +47,43 @@ def test_vault_command_surfaces_corrupt_store_as_clean_error(tmp_path, monkeypat
     out = capsys.readouterr().out
     assert "Error" in out
     assert "corrupted" in out
+
+
+def test_edit_origin_consent_retains_clears_and_replaces(tmp_path, monkeypatch):
+    from hermes_cli import vault
+
+    store = VaultStore(tmp_path / "vault")
+    meta = store.add_item(
+        "login", "site",
+        {"identifier_type": "email", "identifier": "user", "password": "secret"},
+        origin="https://example.com",
+        allowed_origins=["https://www.example.com"],
+        wildcard_origins=["https://*.example.com"],
+    )
+    monkeypatch.setattr("agent.vault_store.get_vault_store", lambda: store)
+    monkeypatch.setattr(
+        vault.getpass, "getpass",
+        lambda *args: (_ for _ in ()).throw(AssertionError("Edit must not prompt for secrets")),
+    )
+    original = store._vault_path.read_bytes()
+
+    def edit(answers):
+        replies = iter(answers)
+        monkeypatch.setattr("builtins.input", lambda prompt: next(replies))
+        vault.vault_command(SimpleNamespace(_vault_handler=vault._cmd_edit, handle=meta.id))
+
+    # Declining existing wildcard grants leaves even the encrypted bytes unchanged.
+    edit(["", "", "", "n"])
+    assert store._vault_path.read_bytes() == original
+    # An empty exact-list response retains the alternate; '-' clears wildcards.
+    edit(["", "", "-", "y"])
+    saved = store.get_meta(meta.id)
+    assert saved.allowed_origins == ("https://example.com", "https://www.example.com")
+    assert saved.wildcard_origins == ()
+    # Entered lines replace, rather than append to, the old optional list.
+    edit(["", "https://login.example.net", "", "", "y"])
+    assert store.get_meta(meta.id).allowed_origins == (
+        "https://example.com", "https://login.example.net",
+    )
+    edit(["", "-", "", "y"])
+    assert store.get_meta(meta.id).allowed_origins == ("https://example.com",)

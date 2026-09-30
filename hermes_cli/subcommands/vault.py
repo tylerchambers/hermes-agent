@@ -7,12 +7,13 @@ def build_vault_parser(subparsers) -> None:
     """Attach the local encrypted autofill vault subcommand."""
     vault_parser = subparsers.add_parser(
         "vault",
-        help="Manage the local encrypted autofill vault (add/list/rm credentials)",
+        help="Manage the local encrypted autofill vault (add/list/edit/rm credentials)",
         description=(
             "Store login credentials in a locally encrypted vault. The agent "
             "sees handles and login identifiers (metadata); passwords are "
-            "injected server-side by browser_vault_fill on the exact origin "
-            "they were saved for and never enter the conversation."
+            "injected server-side by browser_vault_fill only on explicitly saved "
+            "exact origins or opt-in HTTPS subdomain wildcards and never enter "
+            "the conversation. Edit origin permissions without re-entering secrets."
         ),
     )
     from hermes_cli.vault import register_cli, vault_command

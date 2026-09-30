@@ -1,3 +1,12 @@
+import type {
+  GatewayCapabilitiesResult,
+  VaultSource as GatewayVaultSource,
+  VaultAddParams,
+  VaultAddResult,
+  VaultItem,
+  VaultKind,
+  VaultListResult
+} from '@hermes/shared'
 import { useStore } from '@nanostores/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -30,6 +39,9 @@ import { $settingsScopeProfile } from '@/store/settings-scope'
 import { CONTROL_TEXT } from './constants'
 import { ListRow, Pill, SectionHeading, SettingsContent } from './primitives'
 import { SettingsProfileScope } from './profile-scope'
+import { VaultOriginEditDialog } from './vault-origin-edit-dialog'
+import { OriginRuleFields, WildcardConsent } from './vault-origin-fields'
+import { EMPTY_ORIGIN_RULES, exactOrigins, hasAdditionalOriginGrants, originDraftToPayload } from './vault-origin-rules'
 
 // Vault data is private to one (connection, profile); the cache key carries that owner so a
 // late response from profile A can never paint under profile B.
@@ -40,31 +52,13 @@ const vaultSourcesQueryKey = (owner: string) => ['vault-sources', owner] as cons
 export type VaultSourceName = 'bitwarden' | 'local' | 'onepassword'
 
 /** One login source as reported by `vault.sources` — the backend is authoritative for enabled/unlocked. */
-export interface VaultSource {
+export interface VaultSource extends GatewayVaultSource {
   name: VaultSourceName
-  display_name: string
-  enabled: boolean
-  needs_unlock: boolean
-  unlocked: boolean
-  installed: boolean
 }
 
-export type VaultKind = 'address' | 'login' | 'payment'
 const VAULT_KINDS: readonly VaultKind[] = ['login', 'payment', 'address']
 const IDENTIFIER_TYPES = ['email', 'phone', 'username'] as const
 type IdentifierType = (typeof IDENTIFIER_TYPES)[number]
-
-interface VaultItem {
-  id: string
-  kind: string
-  label: string
-  origin: null | string
-  created_at: string
-  identifier?: null | string
-  identifier_type?: null | string
-  backend?: VaultSourceName
-  has_otp?: boolean
-}
 
 /** Add-dialog prefill from a deep link (`/settings?tab=vault&kind=…`). NEVER secrets. */
 export interface VaultPrefill {
@@ -77,20 +71,10 @@ function isVaultKind(value: string | undefined): value is VaultKind {
   return !!value && (VAULT_KINDS as readonly string[]).includes(value)
 }
 
-function isValidOrigin(value: string): boolean {
-  try {
-    const url = new URL(value)
-
-    return (url.protocol === 'https:' || url.protocol === 'http:') && !!url.hostname
-  } catch {
-    return false
-  }
-}
-
 const EMPTY_FORM = {
   kind: 'login' as VaultKind,
   label: '',
-  origin: '',
+  ...EMPTY_ORIGIN_RULES,
   identifierType: 'email' as IdentifierType,
   identifier: '',
   password: '',
@@ -186,6 +170,8 @@ export function VaultSettings({ subpage }: VaultSettingsProps = {}) {
   const [addOpen, setAddOpen] = useState(false)
   const [form, setForm] = useState<VaultForm>(EMPTY_FORM)
   const [formError, setFormError] = useState<null | string>(null)
+  const [wildcardAcknowledged, setWildcardAcknowledged] = useState(false)
+  const [editTarget, setEditTarget] = useState<null | VaultItem>(null)
   const [pendingDelete, setPendingDelete] = useState<null | VaultItem>(null)
   const [unlockTarget, setUnlockTarget] = useState<null | VaultSource>(null)
   const [masterPassword, setMasterPassword] = useState('')
@@ -194,6 +180,15 @@ export function VaultSettings({ subpage }: VaultSettingsProps = {}) {
   // in refs the mutationFn consumes and wipes.
   const pendingMasterPassword = useRef('')
   const pendingSecret = useRef<null | Record<string, string>>(null)
+
+  const capabilities = useQuery({
+    enabled: gatewayState === 'open',
+    queryKey: ['gateway-capabilities', owner],
+    staleTime: 0,
+    queryFn: () => requestGateway<GatewayCapabilitiesResult>('gateway.capabilities', {})
+  })
+
+  const supportsOriginRules = capabilities.isSuccess && capabilities.data.vault_origin_rules === true
 
   const { data: sourcesData } = useQuery({
     enabled: gatewayState === 'open',
@@ -260,7 +255,7 @@ export function VaultSettings({ subpage }: VaultSettingsProps = {}) {
     enabled: gatewayState === 'open',
     queryKey: VAULT_QUERY_KEY,
     queryFn: async () => {
-      const result = await requestGateway<{ items: VaultItem[] }>('vault.list', {})
+      const result = await requestGateway<VaultListResult>('vault.list', {})
 
       return result.items
     }
@@ -280,6 +275,7 @@ export function VaultSettings({ subpage }: VaultSettingsProps = {}) {
     setAddOpen(false)
     setForm(EMPTY_FORM)
     setFormError(null)
+    setWildcardAcknowledged(false)
   }, [])
 
   const openAdd = useCallback((prefill?: VaultPrefill) => {
@@ -290,6 +286,7 @@ export function VaultSettings({ subpage }: VaultSettingsProps = {}) {
       origin: prefill?.origin ?? ''
     })
     setFormError(null)
+    setWildcardAcknowledged(false)
     setAddOpen(true)
   }, [])
 
@@ -317,11 +314,11 @@ export function VaultSettings({ subpage }: VaultSettingsProps = {}) {
   const invalidate = useCallback(() => queryClient.invalidateQueries({ queryKey: VAULT_QUERY_KEY }), [queryClient])
 
   const addMutation = useMutation({
-    mutationFn: async (payload: { kind: VaultKind; label: string; origin?: string }) => {
+    mutationFn: async (payload: Omit<VaultAddParams, 'secret' | 'profile'>) => {
       const secret = pendingSecret.current
       pendingSecret.current = null
 
-      return requestGateway<{ id: string }>('vault.add', { ...payload, secret: secret ?? {} })
+      return requestGateway<VaultAddResult>('vault.add', { ...payload, secret: secret ?? {} })
     },
     onSuccess: () => {
       triggerHaptic('success')
@@ -343,10 +340,10 @@ export function VaultSettings({ subpage }: VaultSettingsProps = {}) {
       return
     }
 
-    // Every kind is filled only on the origin it was saved for; a card without an origin is unfillable.
-    const origin = form.origin.trim()
+    // Cards and addresses remain single-origin; only logins can carry explicit extra grants.
+    const rules = originDraftToPayload(form.kind === 'login' ? form : { ...EMPTY_ORIGIN_RULES, origin: form.origin })
 
-    if (!isValidOrigin(origin)) {
+    if (!rules) {
       setFormError(v.originInvalid)
 
       return
@@ -358,13 +355,36 @@ export function VaultSettings({ subpage }: VaultSettingsProps = {}) {
       return
     }
 
+    if (form.kind === 'login' && form.wildcardOrigins.trim() && !wildcardAcknowledged) {
+      setFormError(v.wildcardAcknowledgement)
+
+      return
+    }
+
+    // Capability loss never turns an explicit grant draft into a narrower write.
+    if (form.kind === 'login' && hasAdditionalOriginGrants(form) && !supportsOriginRules) {
+      return
+    }
+
     pendingSecret.current = buildSecret(form)
     addMutation.mutate({
       kind: form.kind,
       label: form.label.trim(),
-      ...(origin ? { origin } : {})
+      origin: rules.origin,
+      ...(form.kind === 'login' && hasAdditionalOriginGrants(form)
+        ? { allowed_origins: rules.allowed_origins, wildcard_origins: rules.wildcard_origins }
+        : {})
     })
-  }, [addMutation, form, v.labelRequired, v.loginFieldsRequired, v.originInvalid])
+  }, [
+    addMutation,
+    form,
+    wildcardAcknowledged,
+    supportsOriginRules,
+    v.labelRequired,
+    v.loginFieldsRequired,
+    v.originInvalid,
+    v.wildcardAcknowledgement
+  ])
 
   const deleteItem = useCallback(
     async (item: VaultItem) => {
@@ -378,14 +398,14 @@ export function VaultSettings({ subpage }: VaultSettingsProps = {}) {
   const kindLabel = useCallback((kind: string) => v.kinds[kind as VaultKind] ?? kind, [v.kinds])
 
   const sourceLabel = useCallback(
-    (name: VaultSourceName) => externalSources.find(s => s.name === name)?.display_name ?? name,
+    (name: string) => externalSources.find(s => s.name === name)?.display_name ?? name,
     [externalSources]
   )
 
-  const formatCreated = useCallback((iso: string) => {
-    const parsed = new Date(iso)
+  const formatCreated = useCallback((iso: string | undefined) => {
+    const parsed = new Date(iso ?? '')
 
-    return Number.isNaN(parsed.getTime()) ? iso : parsed.toLocaleDateString()
+    return Number.isNaN(parsed.getTime()) ? (iso ?? '') : parsed.toLocaleDateString()
   }, [])
 
   return (
@@ -420,36 +440,39 @@ export function VaultSettings({ subpage }: VaultSettingsProps = {}) {
                 item.backend && item.backend !== 'local' ? (
                   <Pill tone="muted">{sourceLabel(item.backend)}</Pill>
                 ) : (
-                  <Button
-                    aria-label={v.deleteAction}
-                    className="text-(--ui-text-tertiary) hover:text-destructive"
-                    onClick={() => setPendingDelete(item)}
-                    size="icon-sm"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
+                  <span className="flex items-center gap-2">
+                    {supportsOriginRules && item.kind === 'login' && (
+                      <Button onClick={() => setEditTarget(item)} size="sm" type="button" variant="ghost">
+                        {v.editOrigins}
+                      </Button>
+                    )}
+                    <Button
+                      aria-label={v.deleteAction}
+                      className="text-(--ui-text-tertiary) hover:text-destructive"
+                      onClick={() => setPendingDelete(item)}
+                      size="icon-sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </span>
                 )
               }
               description={
-                // identifier · origin · date, separated so the row scans as three facts; the origin is
-                // omitted when the label already IS the host (save-on-page items are labelled by host).
-                <span className="flex flex-wrap items-center gap-x-2">
-                  {item.identifier && <span className="truncate">{v.identifierShown(item.identifier)}</span>}
-                  {item.origin && item.origin.replace(/^https?:\/\//, '') !== item.label && (
-                    <>
-                      {item.identifier && (
-                        <span aria-hidden className="text-(--ui-text-tertiary)">
-                          ·
-                        </span>
-                      )}
-                      <span className="truncate">{item.origin}</span>
-                    </>
-                  )}
-                  <span aria-hidden className="text-(--ui-text-tertiary)">
-                    ·
-                  </span>
+                <span className="flex flex-col items-start gap-1">
+                  {item.identifier && <span className="break-all">{v.identifierShown(item.identifier)}</span>}
+                  {exactOrigins(item).map(origin => (
+                    <span className="break-all" key={origin}>
+                      {origin}
+                    </span>
+                  ))}
+                  {(item.wildcard_origins ?? []).map(origin => (
+                    <span className="flex flex-wrap items-center gap-2" key={origin}>
+                      <Pill tone="muted">{v.wildcardBadge}</Pill>
+                      <span className="break-all">{origin}</span>
+                    </span>
+                  ))}
                   <span>{v.createdOn(formatCreated(item.created_at))}</span>
                 </span>
               }
@@ -627,15 +650,41 @@ export function VaultSettings({ subpage }: VaultSettingsProps = {}) {
               </Field>
             </div>
 
-            <Field htmlFor="vault-origin" label={v.originField}>
-              <Input
-                id="vault-origin"
-                inputMode="url"
-                onChange={e => setForm(f => ({ ...f, origin: e.target.value }))}
-                placeholder={form.kind === 'login' ? v.originPlaceholder : v.originPlaceholderCheckout}
-                value={form.origin}
-              />
-            </Field>
+            {form.kind === 'login' ? (
+              <>
+                <OriginRuleFields
+                  additionalOrigins={form.additionalOrigins}
+                  disabled={addMutation.isPending}
+                  onChange={(field, value) => {
+                    setForm(f => ({ ...f, [field]: value }))
+
+                    if (field === 'wildcardOrigins') {
+                      setWildcardAcknowledged(false)
+                    }
+                  }}
+                  origin={form.origin}
+                  supportsOriginRules={supportsOriginRules}
+                  wildcardOrigins={form.wildcardOrigins}
+                />
+                {supportsOriginRules && form.wildcardOrigins.trim() && (
+                  <WildcardConsent
+                    acknowledged={wildcardAcknowledged}
+                    disabled={addMutation.isPending}
+                    onChange={setWildcardAcknowledged}
+                  />
+                )}
+              </>
+            ) : (
+              <Field htmlFor="vault-origin" label={v.originField}>
+                <Input
+                  id="vault-origin"
+                  inputMode="url"
+                  onChange={e => setForm(f => ({ ...f, origin: e.target.value }))}
+                  placeholder={v.originPlaceholderCheckout}
+                  value={form.origin}
+                />
+              </Field>
+            )}
 
             {form.kind === 'login' && (
               <>
@@ -809,13 +858,32 @@ export function VaultSettings({ subpage }: VaultSettingsProps = {}) {
               <Button onClick={closeAdd} size="sm" type="button" variant="ghost">
                 {t.common.cancel}
               </Button>
-              <Button disabled={addMutation.isPending} size="sm" type="submit">
+              <Button
+                disabled={
+                  addMutation.isPending ||
+                  (form.kind === 'login' && hasAdditionalOriginGrants(form) && !supportsOriginRules) ||
+                  (form.kind === 'login' && !!form.wildcardOrigins.trim() && !wildcardAcknowledged)
+                }
+                size="sm"
+                type="submit"
+              >
                 {addMutation.isPending ? v.adding : v.addConfirm}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+
+      {editTarget && (
+        <VaultOriginEditDialog
+          item={editTarget}
+          key={editTarget.id}
+          onClose={() => setEditTarget(null)}
+          onSaved={invalidate}
+          requestGateway={requestGateway}
+          supportsOriginRules={supportsOriginRules}
+        />
+      )}
 
       {/* Delete confirmation */}
       <ConfirmDialog

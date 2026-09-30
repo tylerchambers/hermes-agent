@@ -516,6 +516,20 @@ export const ru = defineLocale({
     noResults: 'Языки не найдены'
   },
   settings: {
+    vault: {
+      editOrigins: 'Изменить источники',
+      editOriginsTitle: 'Изменить источники для входа',
+      originsSaved: 'Источники для входа обновлены.',
+      additionalOriginsField: 'Дополнительные точные источники',
+      additionalOriginsHint: 'Один URL в строке. Разрешены только эти точные источники.',
+      wildcardOriginsField: 'Источники с подстановочным знаком',
+      wildcardOriginsHint:
+        'Используйте https://*.example.com. Соответствует поддоменам на указанном порту, но не самому example.com.',
+      wildcardWarning:
+        'Все подходящие поддомены могут получить этот пароль. Включайте это только для доменов, которым вы доверяете, включая их делегированные поддомены.',
+      wildcardAcknowledgement: 'Я доверяю каждому подходящему поддомену получение этого пароля.',
+      wildcardBadge: 'Подстановочный знак'
+    },
     subpages: {
       appearanceTheme: 'Тема',
       appearanceTypography: 'Шрифты и масштаб',

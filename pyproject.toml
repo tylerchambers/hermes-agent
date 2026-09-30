@@ -132,6 +132,9 @@ dependencies = [
   # so it rides in the main venv and every install, Desktop bundle included,
   # ships it without a separate tool environment.
   "browser-harness==0.1.13; python_version >= '3.14'",
+  # Offline origin policy for the built-in browser vault.
+  "idna==3.19; python_version >= '3.14'",
+  "tldextract==5.3.2; python_version >= '3.14'",
   # .gitignore-aware file matching for desktop build stamp.
   "pathspec==1.1.1; python_version >= '3.14'",
   "fastapi>=0.104.0,<1; python_version >= '3.14'",

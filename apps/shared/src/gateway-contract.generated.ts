@@ -1826,6 +1826,7 @@ export interface PingResult {
 }
 export interface GatewayCapabilitiesResult {
   per_session_exclusive_submit: boolean
+  vault_origin_rules?: boolean
 }
 export interface ClientCapabilitiesParams {
   server_requests?: boolean
@@ -2121,6 +2122,8 @@ export interface VaultItem {
   identifier_type?: string | null
   has_otp?: boolean | null
   backend: string
+  allowed_origins?: string[]
+  wildcard_origins?: string[]
 }
 export interface VaultSourcesResult {
   sources?: VaultSource[]
@@ -2166,10 +2169,19 @@ export interface VaultAddParams {
   label?: string | null
   origin?: string | null
   secret?: Record<string, unknown> | null
+  allowed_origins?: string[] | null
+  wildcard_origins?: string[] | null
 }
 export type VaultKind = 'login' | 'payment' | 'address'
 export interface VaultAddResult {
   id: string
+}
+export interface VaultUpdateOriginsParams {
+  profile?: string | null
+  id: string
+  origin: string
+  allowed_origins: string[]
+  wildcard_origins: string[]
 }
 export interface VaultRemoveParams {
   profile?: string | null
@@ -4984,7 +4996,7 @@ export interface RpcMethods {
   /** Pure read of the focused profile's free-tier identity state (no network, no side effects). */
   'free_tier.status': { params: ProfileParams; result: FreeTierStatusResult }
   /** What THIS build enforces (a client withholds a feature unless advertised). */
-  'gateway.capabilities': { params: PingParams; result: GatewayCapabilitiesResult }
+  'gateway.capabilities': { params: ProfileParams; result: GatewayCapabilitiesResult }
   /** Resolve one exact pending approval raised by a local or peer room member. */
   'groups.approve': { params: GroupsApproveParams; result: GroupsApproveResult }
   /** Describe the hosted-room protocol implemented by this gateway. */
@@ -5349,6 +5361,8 @@ export interface RpcMethods {
   'vault.sources': { params: ProfileParams; result: VaultSourcesResult }
   /** Unlock a password manager for this session with its master password. */
   'vault.unlock': { params: VaultUnlockParams; result: VaultUnlockResult }
+  /** Replace a local login's origin permissions without reading or changing its secrets. */
+  'vault.update_origins': { params: VaultUpdateOriginsParams; result: VaultAddResult }
   /** Best known verification evidence for a cwd/session; read-only, never runs checks. */
   'verification.status': { params: VerificationStatusParams; result: VerificationStatusResult }
   /** VAD-bounded push-to-talk; the transcript arrives as a voice.transcript event. */
@@ -5613,6 +5627,7 @@ export const RPC_METHODS = [
   'vault.source.set',
   'vault.sources',
   'vault.unlock',
+  'vault.update_origins',
   'verification.status',
   'voice.record',
   'voice.toggle',

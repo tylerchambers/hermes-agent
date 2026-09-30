@@ -891,6 +891,16 @@ export interface Translations {
       originPlaceholder: string
       originPlaceholderCheckout: string
       originInvalid: string
+      editOrigins: string
+      editOriginsTitle: string
+      originsSaved: string
+      additionalOriginsField: string
+      additionalOriginsHint: string
+      wildcardOriginsField: string
+      wildcardOriginsHint: string
+      wildcardWarning: string
+      wildcardAcknowledgement: string
+      wildcardBadge: string
       identifierTypeField: string
       identifierTypes: Record<'email' | 'phone' | 'username', string>
       identifierField: string

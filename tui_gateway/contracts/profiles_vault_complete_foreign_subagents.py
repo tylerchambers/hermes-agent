@@ -426,6 +426,8 @@ class VaultItem(Result):
     identifier_type: str | None = None
     has_otp: bool | None = None
     backend: str
+    allowed_origins: list[str] = Field(default_factory=list)
+    wildcard_origins: list[str] = Field(default_factory=list)
 
 
 class VaultListResult(Result):
@@ -502,6 +504,8 @@ class VaultAddParams(ProfileParams):
     label: str | None = None
     origin: str | None = None
     secret: dict[str, JsonValue] | None = None
+    allowed_origins: list[str] | None = None
+    wildcard_origins: list[str] | None = None
 
 
 class VaultAddResult(Result):
@@ -510,6 +514,17 @@ class VaultAddResult(Result):
 
 method("vault.add", params=VaultAddParams, result=VaultAddResult,
        doc="Add a login / payment / address item to the local vault.")
+
+
+class VaultUpdateOriginsParams(ProfileParams):
+    id: str
+    origin: str
+    allowed_origins: list[str]
+    wildcard_origins: list[str]
+
+
+method("vault.update_origins", params=VaultUpdateOriginsParams, result=VaultAddResult,
+       doc="Replace a local login's origin permissions without reading or changing its secrets.")
 
 
 class VaultRemoveParams(ProfileParams):

@@ -11,8 +11,8 @@ tools):
 - ``browser_vault_fill``  → server-side fill of the CURRENT page from a vault
   handle: the password field for logins, card fields for payment items (after
   the user confirms), address fields for address items. The secret is
-  resolved locally, the page origin must EXACTLY match the item's bound
-  origin (pre-checked AND re-asserted synchronously inside the fill script),
+  resolved locally, the page origin must match the item's explicit grants
+  (then exact concrete-origin equality is re-asserted inside the fill script),
   the field is chosen by the ported login-control classifier, injection runs
   exclusively over the supervisor CDP WebSocket (never argv), and the tool
   result reports only ``{filled_fields, kind, origin, success}`` — the
@@ -29,7 +29,7 @@ from __future__ import annotations
 import json
 import secrets
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -177,16 +177,14 @@ def _parse_json_result(raw: Any) -> Any:
 
 
 def _current_page_origin(task_id: str) -> Optional[str]:
-    res = _eval_js(task_id, "window.location.href")
+    res = _eval_js(task_id, "window.location.origin")
     if not res.get("success"):
         return None
-    href = str(res.get("result") or "").strip().strip('"').strip("'")
-    if not href or href == "about:blank":
-        return None
+    origin = _parse_json_result(res.get("result"))
     try:
-        from agent.vault_store import normalize_origin
+        from agent.vault_origins import normalize_web_origin
 
-        return normalize_origin(href)
+        return normalize_web_origin(origin)
     except Exception:
         return None
 
@@ -199,7 +197,8 @@ _TAB_PROBES = {
 }
 
 
-def _focus_bound_origin(task_id: str, origin: str, kind: str) -> Optional[str]:
+def _focus_bound_origin(task_id: str, origin: str, kind: str, *,
+                        origin_matches: Optional[Callable[[str], bool]] = None) -> Optional[str]:
     """Point the supervisor's page session at the open tab on ``origin`` that holds a ``kind`` form
     (browser_exec sessions open their own tabs, so the tab the supervisor attached to first is rarely the
     login page). Returns the origin when a tab was focused, else None (caller falls back to the current page)."""
@@ -209,8 +208,16 @@ def _focus_bound_origin(task_id: str, origin: str, kind: str) -> Optional[str]:
         supervisor = None
     if supervisor is None:
         return None
-    focused = supervisor.focus_page(origin, accept=_TAB_PROBES.get(kind))
-    return (origin or focused.get("url")) if focused.get("ok") else None
+    from agent.vault_origins import browser_url_origin
+
+    kwargs = {"origin_matches": origin_matches} if origin_matches is not None else {}
+    focused = supervisor.focus_page(origin, accept=_TAB_PROBES.get(kind), **kwargs)
+    if not focused.get("ok"):
+        return None
+    try:
+        return browser_url_origin(focused.get("url"))
+    except ValueError:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +249,8 @@ def browser_vault_list() -> str:
                      "origin": meta.origin, "available": meta.kind == "login" or bool(meta.origin)}
             if len(meta.allowed_origins) > 1:
                 entry["allowed_origins"] = list(meta.allowed_origins)
+            if meta.wildcard_origins:
+                entry["wildcard_origins"] = list(meta.wildcard_origins)
             if meta.has_otp or backend.needs_unlock:
                 entry["two_factor"] = "automatic" if meta.has_otp else "automatic if the manager stores a TOTP seed, else the user is asked"
             if meta.identifier:
@@ -249,6 +258,7 @@ def browser_vault_list() -> str:
                 entry["identifier_type"] = meta.identifier_type
             items.append(entry)
     out: Dict[str, Any] = {"success": True, "items": items}
+    out["login_scope"] = "Logins allow only saved exact origins and explicitly configured HTTPS wildcard grants."
     if not items:
         out["hint"] = ("No saved logins. On a login page, call browser_vault_save_login to ask the user to save one. "
                        "Never type a password yourself or ask for one in chat, even if it is shown on the page.")
@@ -418,6 +428,8 @@ def browser_vault_fill(handle: str, task_id: Optional[str] = None) -> str:
     )
     from agent.vault_backends import UnlockRequired, backend_for_handle
     from agent.vault_store import ADDRESS_FIELDS, PAYMENT_FIELDS, scrub_secret_from_text
+    from agent.vault_origins import normalize_login_rules, normalize_web_origin, origin_is_allowed
+    from agent.vault_store import VaultError
 
     effective_task_id = task_id or "default"
     backend = backend_for_handle(handle)
@@ -431,6 +443,8 @@ def browser_vault_fill(handle: str, task_id: Optional[str] = None) -> str:
     except UnlockRequired:
         return json.dumps({"success": False, "error_type": "unlock_required",
                            "error": f"{backend.display_name} locked again; call browser_vault_unlock."})
+    except (VaultError, ValueError) as exc:
+        return json.dumps({"success": False, "error_type": "invalid_origin_rules", "error": str(exc)})
     if meta is None:
         return json.dumps(
             {
@@ -451,32 +465,48 @@ def browser_vault_fill(handle: str, task_id: Optional[str] = None) -> str:
 
     # ── Origin binding pre-check (cheap early exit; the authoritative check
     # runs synchronously inside the fill script itself) ──────────────────────
-    # Manager items can bind several websites (e.g. amazon.co.uk + www.amazon.co.uk);
-    # every saved origin is a valid fill target. Matching stays exact-origin —
-    # nothing wildcard/parent-domain is ever inferred.
-    allowed = list(meta.allowed_origins) or ([str(meta.origin)] if meta.origin else [])
-    page_origin = None
-    for candidate in allowed:
-        page_origin = _focus_bound_origin(effective_task_id, candidate, meta.kind)
-        if page_origin:
-            break
-    page_origin = page_origin or _current_page_origin(effective_task_id)
-    if not page_origin:
-        return json.dumps(
-            {"success": False, "error": "Could not determine the current page origin. Navigate to the login page first."}
-        )
-    if page_origin not in allowed:
-        return json.dumps(
-            {
-                "success": False,
-                "error_type": "origin_mismatch",
-                "error": (
-                    f"Refused: current page origin ({page_origin}) does not match "
-                    f"the vault item's bound origin(s) ({', '.join(allowed)}). Vault fills "
-                    "only run on the exact origin(s) the credential was saved for."
+    allowed = []
+    wildcards = meta.wildcard_origins if meta.kind == "login" else ()
+    try:
+        for candidate in meta.allowed_origins or ([meta.origin] if meta.origin else []):
+            try:
+                allowed.append(normalize_web_origin(candidate))
+            except ValueError:
+                if backend.name == "local":
+                    raise
+                # Imported app URIs are metadata, never browser destinations.
+        if wildcards:
+            normalize_login_rules(meta.origin, allowed, wildcards)
+        focused = None
+        for candidate in allowed:
+            focused = _focus_bound_origin(effective_task_id, candidate, meta.kind)
+            if focused:
+                break
+        if not focused and wildcards:
+            _focus_bound_origin(
+                effective_task_id, "", meta.kind,
+                origin_matches=lambda origin: origin_is_allowed(
+                    origin, allowed_origins=(), wildcard_origins=wildcards,
                 ),
-            }
-        )
+            )
+        # Target enumeration can race navigation: authorize the real page again,
+        # not the target URL or the rule that selected it.
+        page_origin = _current_page_origin(effective_task_id)
+        if not page_origin:
+            return json.dumps(
+                {"success": False, "error": "Could not determine the current page origin. Navigate to the login page first."}
+            )
+        permitted = origin_is_allowed(page_origin, allowed_origins=allowed, wildcard_origins=wildcards)
+    except ValueError as exc:
+        return json.dumps({"success": False, "error_type": "invalid_origin_rules", "error": str(exc)})
+    if not permitted:
+        guidance = (f"Use `hermes vault edit {handle}` or Desktop Edit origins."
+                    if backend.name == "local" else "Edit the saved websites in your password manager.")
+        return json.dumps({
+            "success": False, "error_type": "origin_mismatch",
+            "error": (f"Refused: current page origin ({page_origin}) is outside saved exact origins "
+                      f"({', '.join(allowed)}) and wildcard grants ({', '.join(wildcards)}). {guidance}"),
+        })
 
     # ── Inspect + classify page controls ────────────────────────────────────
     nonce = secrets.token_hex(8)  # binds this fill to THIS inspection's stamps
@@ -590,7 +620,7 @@ BROWSER_VAULT_LIST_SCHEMA = {
     "name": "browser_vault_list",
     "description": (
         "ALWAYS call this first when a page asks for a password, card or address. Lists saved website logins, "
-        "payment cards and addresses as handles with metadata (kind, label, backend, bound origin; logins also "
+        "payment cards and addresses as handles with metadata (kind, label, backend, exact origins and explicit wildcard grants; logins also "
         "carry identifier + identifier_type so you can type the username yourself with the browser's input tool). "
         "Secret values are NEVER returned. Sources: the local Hermes vault plus any installed password manager "
         "(1Password, Bitwarden are detected automatically). A locked manager appears under `locked`; call "
@@ -625,8 +655,9 @@ BROWSER_VAULT_FILL_SCHEMA = {
         "the password field (type the identifier/username yourself first with the browser's input tool); a "
         "payment item fills card number/name/expiry/CVC after the user confirms in their UI; an address item "
         "fills the address fields. Values are resolved server-side and never appear in the conversation. "
-        "Refused unless the page origin exactly matches the item's bound origin (re-checked atomically at "
-        "fill time). If a password manager is locked the user is prompted to unlock first. Never retry a "
+        "Login fills require a saved exact origin or an explicitly configured HTTPS wildcard grant; "
+        "cards and addresses require their bound exact origin. The concrete page origin is re-checked atomically "
+        "at fill time. If a password manager is locked the user is prompted to unlock first. Never retry a "
         "payment_declined result."
     ),
     "parameters": {

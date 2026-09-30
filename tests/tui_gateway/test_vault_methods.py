@@ -175,3 +175,53 @@ def test_launch_profile_vault_rpcs_stay_scoped_once_the_process_multiplexes(home
     monkeypatch.setattr("agent.vault_backends.base.is_installed", lambda name: name == "onepassword")
     set_multiplex_active(True)  # conftest resets the latch per test
     assert _sources_rows(home)["onepassword"]["enabled"] is True
+
+
+def test_origin_rules_dispatch_is_profile_owned_and_secret_free(home, tmp_path, monkeypatch):
+    from pathlib import Path
+    from agent.secret_scope import set_multiplex_active
+    from agent.vault_store import VaultStore
+
+    other = tmp_path / "other"
+    other.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(srv, "_hermes_home", home)
+    monkeypatch.setattr(srv, "_profile_home", lambda name: other if name == "b" else None)
+    monkeypatch.setattr("agent.vault_backends.base.is_installed", lambda _: False)
+    set_multiplex_active(True)
+
+    def rpc(method, params):
+        return srv.handle_request({"id": 100, "method": method, "params": params})
+
+    ids = {}
+    for profile in ("a", "b"):
+        secret = {**_LOGIN_PARAMS["secret"], "password": f"synthetic-{profile}", "otp_secret": "JBSWY3DPEHPK3PXP"}
+        params = {**_LOGIN_PARAMS, "secret": secret, "allowed_origins": ["https://www.example.com"],
+                  "wildcard_origins": ["https://*.example.com"]}
+        if profile == "b":
+            params["profile"] = "b"
+        ids[profile] = _result(rpc("vault.add", params))["id"]
+    stores = {"a": VaultStore(home / "vault"), "b": VaultStore(other / "vault")}
+    before = {p: s.resolve_secret(ids[p]) for p, s in stores.items()}
+    for profile in ("a", "b", "a"):
+        scope = {"profile": "b"} if profile == "b" else {}
+        update = {**scope, "id": ids[profile], "origin": f"https://{profile}.example.com",
+                  "allowed_origins": [], "wildcard_origins": []}
+        assert _result(rpc("vault.update_origins", update))["id"] == ids[profile]
+        items = _result(rpc("vault.list", scope))["items"]
+        assert [item["id"] for item in items] == [ids[profile]]
+        assert items[0]["origin"] == update["origin"]
+        assert "password" not in json.dumps(items) and "JBSWY3DPEHPK3PXP" not in json.dumps(items)
+        assert stores[profile].resolve_secret(ids[profile]) == before[profile]
+    assert stores["b"].get_meta(ids["b"]).origin == "https://b.example.com"
+    valid = {"id": ids["a"], "origin": "https://a.example.com", "allowed_origins": [], "wildcard_origins": []}
+    blob = stores["a"]._vault_path.read_bytes()
+    for field in ("id", "origin", "allowed_origins", "wildcard_origins"):
+        absent = {k: v for k, v in valid.items() if k != field}
+        assert _error(rpc("vault.update_origins", absent))["code"] == 5095
+        for value in (None, 42, {}):
+            assert _error(rpc("vault.update_origins", {**valid, field: value}))["code"] == 5095
+    for key in ("secret", "unexpected"):
+        assert _error(rpc("vault.update_origins", {**valid, key: {}}))["code"] == 4000
+    assert _error(rpc("vault.update_origins", {**valid, "id": ids["b"]}))["code"] == 5095
+    assert stores["a"]._vault_path.read_bytes() == blob
