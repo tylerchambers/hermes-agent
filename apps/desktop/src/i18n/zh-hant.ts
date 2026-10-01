@@ -494,6 +494,16 @@ export const zhHant = defineLocale({
       vault: '密碼與登入'
     },
     vault: {
+      editOrigins: '編輯來源',
+      editOriginsTitle: '編輯登入來源',
+      originsSaved: '登入來源已更新。',
+      additionalOriginsField: '其他精確來源',
+      additionalOriginsHint: '每行一個 URL。僅允許完全符合這些來源的網站。',
+      wildcardOriginsField: '萬用字元來源',
+      wildcardOriginsHint: '使用 https://*.example.com。符合指定連接埠的子網域，但不包含 example.com 本身。',
+      wildcardWarning: '所有符合的子網域都能接收此密碼。僅對您信任的網域啟用，包括其委派給他人的子網域。',
+      wildcardAcknowledgement: '我信任所有符合的子網域接收此密碼。',
+      wildcardBadge: '萬用字元',
       title: '密碼與登入',
       blurb:
         '說一句「登入 GitHub」，代理就會代你登入。第一次遇到登入頁時它會當場向你索取登入資訊，之後就自動完成。密碼在本機加密儲存並直接填入頁面——模型永遠看不到。',

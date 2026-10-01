@@ -968,6 +968,18 @@ export const deOverrides = {
       }
     },
     vault: {
+      editOrigins: 'Ursprünge bearbeiten',
+      editOriginsTitle: 'Login-Ursprünge bearbeiten',
+      originsSaved: 'Login-Ursprünge aktualisiert.',
+      additionalOriginsField: 'Weitere exakte Ursprünge',
+      additionalOriginsHint: 'Eine URL pro Zeile. Nur diese exakten Ursprünge sind erlaubt.',
+      wildcardOriginsField: 'Ursprünge mit Platzhalter',
+      wildcardOriginsHint:
+        'Verwenden Sie https://*.example.com. Gilt für Subdomains am angegebenen Port, nicht für example.com selbst.',
+      wildcardWarning:
+        'Alle passenden Subdomains können dieses Passwort erhalten. Aktivieren Sie dies nur für Domains, denen Sie vertrauen, einschließlich ihrer delegierten Subdomains.',
+      wildcardAcknowledgement: 'Ich vertraue jeder passenden Subdomain dieses Passwort an.',
+      wildcardBadge: 'Platzhalter',
       title: 'Passwörter & Logins',
       blurb:
         'Sagen Sie „melde mich bei GitHub an“, und der Agent meldet Sie an. Beim ersten Mal auf einer Anmeldeseite fragt er Sie direkt dort nach dem Login; danach läuft es einfach. Passwörter sind auf diesem Rechner verschlüsselt und werden direkt in die Seite eingetragen – das Modell sieht sie nie.',

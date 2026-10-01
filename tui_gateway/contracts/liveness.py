@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .base import Params, Result
+from .common import ProfileParams
 from .registry import method
 
 
@@ -20,9 +21,10 @@ method("ping", params=PingParams, result=PingResult,
 
 class GatewayCapabilitiesResult(Result):
     per_session_exclusive_submit: bool
+    vault_origin_rules: bool = False
 
 
-method("gateway.capabilities", params=PingParams, result=GatewayCapabilitiesResult,
+method("gateway.capabilities", params=ProfileParams, result=GatewayCapabilitiesResult,
        doc="What THIS build enforces (a client withholds a feature unless advertised).")
 
 

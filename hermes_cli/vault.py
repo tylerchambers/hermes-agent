@@ -7,6 +7,8 @@ Subcommands:
 - ``hermes vault list``  metadata — labels, kinds, identifiers, origins,
   handles. Passwords are never shown.
 - ``hermes vault rm``    remove an item by handle/id.
+- ``hermes vault edit``  replace a local login's origin permissions without
+  changing or re-entering its password or authenticator key.
 
 The vault backs the password-blind browser autofill tools
 (``browser_vault_list`` / ``browser_vault_fill``): the agent sees handles
@@ -23,6 +25,88 @@ def _console():
     from rich.console import Console
 
     return Console()
+
+
+def _prompt_origin_rules(c, current=None):
+    """Collect and validate destination metadata without touching secrets."""
+    from agent.vault_origins import normalize_login_rules
+    from agent.vault_store import VaultError
+
+    def read_list(label, existing):
+        c.print(f"{label} (one URL per line; empty line finishes)", markup=False)
+        if current is not None:
+            c.print("Current: " + (", ".join(existing) or "(none)"), markup=False)
+            c.print("Empty first line keeps these; '-' first clears them.", markup=False)
+        values = []
+        while True:
+            value = input("> ").strip()
+            if not value:
+                return existing if current is not None and not values else values
+            if current is not None and not values and value == "-":
+                return []
+            values.append(value)
+
+    origin = ""
+    if current is not None:
+        c.print(f"Current primary exact origin: {current.origin}", markup=False)
+        origin = input("Primary exact origin (Enter to keep): ").strip() or current.origin
+    else:
+        while not origin:
+            origin = input("Site origin (e.g. https://github.com): ").strip()
+    existing = (current.allowed_origins or (current.origin,)) if current is not None else ()
+    additional = read_list(
+        "Additional exact origins",
+        [value for value in existing if value != current.origin] if current is not None else [],
+    )
+    wildcards = read_list("Wildcard origins", list(current.wildcard_origins) if current is not None else [])
+    try:
+        rules = normalize_login_rules(origin, additional, wildcards)
+    except ValueError as exc:
+        raise VaultError(str(exc)) from exc
+    primary, exact, wildcards = rules
+    c.print("Exact origins:", markup=False)
+    for value in exact:
+        c.print(f"  {value}", markup=False)
+    c.print("Wildcard origins:", markup=False)
+    for value in wildcards:
+        c.print(f"  {value}", markup=False)
+    if not wildcards:
+        c.print("  (none)", markup=False)
+    if wildcards:
+        c.print(
+            "All matching subdomains can receive this password. "
+            "The apex is not included unless listed explicitly.",
+            markup=False,
+        )
+        confirmed = input("Save these wildcard permissions? [y/N] ").strip().lower() == "y"
+    elif current is not None:
+        confirmed = input("Save origin rules? [y/N] ").strip().lower() == "y"
+    else:
+        confirmed = True
+    if not confirmed:
+        c.print("Cancelled; no changes saved.", markup=False)
+        return None
+    return primary, exact, wildcards
+
+
+def _cmd_edit(args) -> None:
+    from agent.vault_store import VaultError, get_vault_store
+
+    c = _console()
+    store = get_vault_store()
+    meta = store.get_meta(args.handle)
+    if meta is None:
+        raise VaultError("No local vault item with that handle; edit external items in their password manager")
+    if meta.kind != "login":
+        raise VaultError("Origin rules are supported only for login items")
+    rules = _prompt_origin_rules(c, meta)
+    if rules is None:
+        return
+    origin, exact, wildcards = rules
+    store.update_origin_rules(
+        meta.id, origin=origin, allowed_origins=exact, wildcard_origins=wildcards
+    )
+    c.print(f"[green]Origin rules saved.[/] handle=[bold]{meta.id}[/]")
 
 
 def _cmd_add(args) -> None:
@@ -53,9 +137,10 @@ def _cmd_add(args) -> None:
 
     try:
         if kind == "login":
-            origin = ""
-            while not origin:
-                origin = input("Site origin (e.g. https://github.com): ").strip()
+            rules = _prompt_origin_rules(c)
+            if rules is None:
+                return
+            origin, exact, wildcards = rules
             id_type = ""
             while id_type not in LOGIN_IDENTIFIER_TYPES:
                 id_type = (
@@ -81,7 +166,8 @@ def _cmd_add(args) -> None:
                 **({"otp_secret": otp_secret} if otp_secret.strip() else {}),
             }
             meta = get_vault_store().add_item(
-                kind="login", label=label, secret=secret, origin=origin
+                kind="login", label=label, secret=secret, origin=origin,
+                allowed_origins=exact, wildcard_origins=wildcards,
             )
         else:
             from agent.vault_store import ADDRESS_FIELDS, PAYMENT_FIELDS, REQUIRED_FIELDS
@@ -128,10 +214,13 @@ def _cmd_list(args) -> None:
         from rich.table import Table
 
         table = Table(title=f"Vault items ({len(rows)})")
-        for col in ("Handle", "Source", "Kind", "Label", "Identifier", "Origin"):
+        for col in ("Handle", "Source", "Kind", "Label", "Identifier", "Origin rules"):
             table.add_column(col, style="bold" if col == "Handle" else None)
         for source, meta in rows:
-            table.add_row(meta.id, source, meta.kind, meta.label, meta.identifier or "-", meta.origin or "-")
+            exact = meta.allowed_origins or ((meta.origin,) if meta.origin else ())
+            scope = [f"Exact: {value}" for value in exact]
+            scope.extend(f"Wildcard: {value}" for value in meta.wildcard_origins)
+            table.add_row(meta.id, source, meta.kind, meta.label, meta.identifier or "-", "\n".join(scope) or "-")
         c.print(table)
         c.print("[dim]Passwords are never shown; the agent fills them server-side from the handle.[/]")
     for name in locked:
@@ -198,6 +287,10 @@ def register_cli(subparser) -> None:
 
     p_list = subs.add_parser("list", help="List vault items (metadata only, never values)")
     p_list.set_defaults(_vault_handler=_cmd_list)
+
+    p_edit = subs.add_parser("edit", help="Edit a local login's explicit exact and wildcard origins (no secret changes)")
+    p_edit.add_argument("handle", help="Local login handle (see `hermes vault list`)")
+    p_edit.set_defaults(_vault_handler=_cmd_edit)
 
     p_rm = subs.add_parser("rm", help="Remove a vault item by handle")
     p_rm.add_argument("handle", help="Item handle (see `hermes vault list`)")

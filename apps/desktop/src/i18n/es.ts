@@ -969,6 +969,18 @@ export const esOverrides = {
       }
     },
     vault: {
+      editOrigins: 'Editar orígenes',
+      editOriginsTitle: 'Editar orígenes de inicio de sesión',
+      originsSaved: 'Orígenes de inicio de sesión actualizados.',
+      additionalOriginsField: 'Orígenes exactos adicionales',
+      additionalOriginsHint: 'Una URL por línea. Solo se permiten estos orígenes exactos.',
+      wildcardOriginsField: 'Orígenes con comodín',
+      wildcardOriginsHint:
+        'Usa https://*.example.com. Coincide con subdominios en el puerto indicado, no con example.com en sí.',
+      wildcardWarning:
+        'Todos los subdominios coincidentes pueden recibir esta contraseña. Actívalo solo para dominios en los que confíes, incluidos sus subdominios delegados.',
+      wildcardAcknowledgement: 'Confío en que todos los subdominios coincidentes reciban esta contraseña.',
+      wildcardBadge: 'Comodín',
       title: 'Contraseñas e inicios de sesión',
       blurb:
         'Di “inicia sesión en GitHub” y el agente lo hará por ti. La primera vez que encuentre una página de inicio de sesión, te pedirá los datos ahí mismo; después, simplemente funcionará. Las contraseñas se cifran en este equipo y se introducen directamente en la página: el modelo nunca las ve.',

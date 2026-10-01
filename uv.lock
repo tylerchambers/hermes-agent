@@ -14,108 +14,108 @@ exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for 
 exclude-newer-span = "P14D"
 
 [options.exclude-newer-package]
-agent-client-protocol = false
-aiohttp = false
-aiohttp-socks = false
-aiosqlite = false
-alibabacloud-dingtalk = false
-anthropic = false
-asyncpg = false
-azure-identity = false
-boto3 = false
-brotlicffi = false
-browser-harness = false
-certifi = false
-concurrent-log-handler = false
-croniter = false
-cryptography = false
-daytona = false
-ddgs = "2026-08-26T21:52:34Z"
-debugpy = false
-defusedxml = false
-dingtalk-stream = false
-discord-py = false
-edge-tts = false
 elevenlabs = false
-exa-py = false
-fal-client = false
-fastapi = false
-faster-whisper = false
-fire = false
-firecrawl-anydoc = false
-firecrawl-py = false
-google-api-python-client = false
+langfuse = "2026-09-09T16:01:26Z"
+setuptools = false
+modal = false
+pyyaml = false
+maturin = false
+numpy = false
+pvporcupine = false
 google-auth = false
-google-auth-httplib2 = false
-google-auth-oauthlib = false
+aiohttp = false
+starlette = false
+mistralai = false
+firecrawl-py = false
+parallel-web = false
+markdown = false
+opentelemetry-sdk = false
+prompt-toolkit = false
+fastapi = false
+anthropic = false
+pathspec = false
+ruff = false
+defusedxml = false
+websockets = false
+exa-py = false
+mcp = false
+python-olm = false
+wheel = false
+pytest = false
+pillow = false
+setuptools-rust = false
+tenacity = false
+sherpa-onnx-core = "2026-09-10T15:58:47Z"
+pyjwt = false
+slack-bolt = false
+fal-client = false
+asyncpg = false
+boto3 = false
+ruamel-yaml = false
+sherpa-onnx = "2026-09-10T17:00:04Z"
+huggingface-hub = false
+pytest-asyncio = false
 google-cloud-pubsub = false
-h2 = false
+slack-sdk = false
+discord-py = false
 honcho-ai = false
+faster-whisper = false
+certifi = false
+debugpy = false
+ddgs = "2026-08-26T21:52:34Z"
+packaging = false
+rich = false
+supermemory = false
+h2 = false
+unpaddedbase64 = false
+youtube-transcript-api = false
+edge-tts = false
+microsoft-teams-apps = false
+aiohttp-socks = false
+sentencepiece = false
+opentelemetry-exporter-otlp-proto-http = false
+croniter = false
+browser-harness = false
+azure-identity = false
+lark-oapi = false
+firecrawl-anydoc = false
+google-api-python-client = false
+brotlicffi = false
+mem0ai = false
+qrcode = false
+soundfile = "2026-06-06T08:58:48Z"
+vercel = false
+aiosqlite = false
+tzdata = false
+python-dotenv = false
+daytona = false
+uvicorn = false
+nemo-relay = false
+requests = false
 httplib2 = false
 httpx = false
-httpx2 = false
-huggingface-hub = false
-jinja2 = false
-langfuse = "2026-09-09T16:01:26Z"
-lark-oapi = false
-markdown = false
-maturin = false
-mautrix = false
-mcp = false
-mem0ai = false
-microsoft-teams-apps = false
-mistralai = false
-modal = false
-nemo-relay = false
-neutts = "2026-07-22T14:54:23Z"
-numpy = false
-openai = false
-opentelemetry-exporter-otlp-proto-http = false
-opentelemetry-sdk = false
-packaging = false
-parallel-web = false
-pathspec = false
-pillow = false
 piper-tts = "2026-09-04T16:47:32Z"
-prompt-toolkit = false
-psutil = false
-pvporcupine = false
 pyasn1 = false
-pydantic = false
-pyjwt = false
-pytest = false
-pytest-asyncio = false
-python-dotenv = false
-python-multipart = false
-python-olm = false
-python-telegram-bot = false
-pyyaml = false
-qrcode = false
-requests = false
-rich = false
-ruamel-yaml = false
-ruff = false
-sentencepiece = false
-setuptools = false
-setuptools-rust = false
-sherpa-onnx = "2026-09-10T17:00:04Z"
-sherpa-onnx-core = "2026-09-10T15:58:47Z"
-slack-bolt = false
-slack-sdk = false
 snowballstemmer = false
-sounddevice = false
-soundfile = "2026-06-06T08:58:48Z"
-starlette = false
-supermemory = false
-tenacity = false
+concurrent-log-handler = false
+cryptography = false
+pydantic = false
+agent-client-protocol = false
+fire = false
+httpx2 = false
+google-auth-oauthlib = false
+python-multipart = false
 ty = false
-tzdata = false
-unpaddedbase64 = false
-uvicorn = false
-vercel = false
-websockets = false
-wheel = false
-youtube-transcript-api = false
+openai = false
+mautrix = false
+neutts = "2026-07-22T14:54:23Z"
+google-auth-httplib2 = false
+psutil = false
+python-telegram-bot = false
+jinja2 = false
+sounddevice = false
+alibabacloud-dingtalk = false
+dingtalk-stream = false
 
 [manifest]
 overrides = [
@@ -2356,6 +2356,7 @@ dependencies = [
     { name = "firecrawl-anydoc" },
     { name = "httptools" },
     { name = "httpx", extra = ["socks"] },
+    { name = "idna" },
     { name = "jinja2" },
     { name = "markdown" },
     { name = "nemo-relay", marker = "(platform_machine == 'aarch64' and 'android' not in platform_release and sys_platform == 'linux') or (platform_machine == 'x86_64' and 'android' not in platform_release and sys_platform == 'linux') or (platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (platform_machine == 'ARM64' and sys_platform == 'win32')" },
@@ -2380,6 +2381,7 @@ dependencies = [
     { name = "ruamel-yaml" },
     { name = "snowballstemmer" },
     { name = "tenacity" },
+    { name = "tldextract" },
     { name = "tomli-w" },
     { name = "truststore" },
     { name = "tzdata", marker = "sys_platform == 'win32'" },
@@ -2730,6 +2732,7 @@ requires-dist = [
     { name = "httpx2", marker = "extra == 'computer-use'", specifier = "==2.7.0" },
     { name = "httpx2", marker = "extra == 'mcp'", specifier = "==2.7.0" },
     { name = "huggingface-hub", marker = "extra == 'trace-upload'", specifier = "==1.24.0" },
+    { name = "idna", marker = "python_full_version >= '3.14'", specifier = "==3.19" },
     { name = "jinja2", marker = "python_full_version >= '3.14'", specifier = "==3.1.6" },
     { name = "kittentts", marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'kittentts') or (platform_machine != 'ARM64' and sys_platform == 'win32' and extra == 'kittentts') or (sys_platform != 'darwin' and sys_platform != 'win32' and extra == 'kittentts')", url = "https://github.com/KittenML/KittenTTS/releases/download/0.8.1/kittentts-0.8.1-py3-none-any.whl" },
     { name = "langfuse", marker = "extra == 'langfuse'", specifier = "==4.15.2" },
@@ -2807,6 +2810,7 @@ requires-dist = [
     { name = "starlette", marker = "extra == 'web'", specifier = "==1.3.1" },
     { name = "supermemory", marker = "extra == 'supermemory'", specifier = "==3.50.0" },
     { name = "tenacity", marker = "python_full_version >= '3.14'", specifier = "==9.1.4" },
+    { name = "tldextract", marker = "python_full_version >= '3.14'", specifier = "==5.3.2" },
     { name = "tomli-w", marker = "python_full_version >= '3.14'", specifier = "==1.2.0" },
     { name = "truststore", marker = "python_full_version >= '3.14'", specifier = "==0.10.4" },
     { name = "tzdata", marker = "python_full_version >= '3.14' and sys_platform == 'win32'", specifier = "==2025.3" },
@@ -5764,6 +5768,18 @@ wheels = [
 ]
 
 [[package]]
+name = "requests-file"
+version = "3.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3c/f8/5dc70102e4d337063452c82e1f0d95e39abfe67aa222ed8a5ddeb9df8de8/requests_file-3.0.1.tar.gz", hash = "sha256:f14243d7796c588f3521bd423c5dea2ee4cc730e54a3cac9574d78aca1272576", size = 6967, upload-time = "2025-10-20T18:56:42.279Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/d5/de8f089119205a09da657ed4784c584ede8381a0ce6821212a6d4ca47054/requests_file-3.0.1-py2.py3-none-any.whl", hash = "sha256:d0f5eb94353986d998f80ac63c7f146a307728be051d4d1cd390dbdb59c10fa2", size = 4514, upload-time = "2025-10-20T18:56:41.184Z" },
+]
+
+[[package]]
 name = "requests-oauthlib"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -6626,6 +6642,21 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/4f/a8/f57819347fc4d8bef2204d15fcbb9d7dff2d6cdd5f83d5ed91456ddacc55/thinc-8.3.13-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:ba8119daf84a12259ae4d251d36426417bafa0b34108890b4b7e2b50966bd990", size = 4986051, upload-time = "2026-03-23T07:22:30.933Z" },
     { url = "https://files.pythonhosted.org/packages/05/ef/a82214bb7c7c1e2d92b69e1a7654be90cfab180082c6108e45a98af2422c/thinc-8.3.13-cp314-cp314-win_amd64.whl", hash = "sha256:433e3826e018da489f1a8068e6de677f6eff3cc93991a599d90f12cd1bc26cdc", size = 1740382, upload-time = "2026-03-23T07:22:32.869Z" },
     { url = "https://files.pythonhosted.org/packages/9f/ef/1648fda54e9689058335ff54f650a7a314db2a42e21af1b83949b2dc748e/thinc-8.3.13-cp314-cp314-win_arm64.whl", hash = "sha256:11754fada9ad5ba2e02d5f3f234f940e24015b82333db58372f4a6aedad9b43f", size = 1667687, upload-time = "2026-03-23T07:22:34.967Z" },
+]
+
+[[package]]
+name = "tldextract"
+version = "5.3.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "filelock" },
+    { name = "idna" },
+    { name = "requests" },
+    { name = "requests-file" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/01/a9/ed5d3be29bfaf90c00b7159d3884b311f3880b55833d1c7be764164dc288/tldextract-5.3.2.tar.gz", hash = "sha256:c017431bc0800f2d3d1b57cce36e06668f0930f60a6d8c4615d4e2b8da298fa9", size = 191971, upload-time = "2026-08-08T20:53:13.732Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4a/3b/930310b274dfe3b9a4fe64ef8b24e5faf376c9a6f94bba6fc6e438058598/tldextract-5.3.2-py3-none-any.whl", hash = "sha256:6c90d2a259f5c89f4fcf01f97af15708416a59ffedddff006d67222ab30d0fb0", size = 106415, upload-time = "2026-08-08T20:53:12.675Z" },
 ]
 
 [[package]]

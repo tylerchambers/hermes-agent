@@ -263,7 +263,8 @@ class CDPSupervisor(DialogSupervisionMixin, FrameTrackingMixin):
             value = result_obj.get("description") or result_obj.get("unserializableValue")
         return {"ok": True, "result": value, "result_type": result_type}
 
-    def focus_page(self, origin: str, *, accept: Optional[str] = None, timeout: float = 10.0) -> Dict[str, Any]:
+    def focus_page(self, origin: str, *, accept: Optional[str] = None, timeout: float = 10.0,
+                   origin_matches: Optional[Callable[[str], bool]] = None) -> Dict[str, Any]:
         """Re-attach the supervisor's page session to an open page target on ``origin``
         (``scheme://host[:port]``). The initial attach picks the FIRST page target, but tools
         that open their own tabs (browser_exec) put the login form somewhere else. With
@@ -282,18 +283,19 @@ class CDPSupervisor(DialogSupervisionMixin, FrameTrackingMixin):
             return sid
 
         async def _focus() -> Dict[str, Any]:
-            from agent.vault_store import normalize_origin
+            from agent.vault_origins import browser_url_origin
             targets = (await self._cdp("Target.getTargets", timeout=timeout)).get("result", {}).get("targetInfos", [])
             candidates = []
             for t in targets:
                 url = str(t.get("url") or "")
-                try:
-                    # origin="" = any http(s) page (used to FIND the login tab before its origin is known)
-                    if t.get("type") == "page" and url.startswith(("http://", "https://")) \
-                            and (not origin or normalize_origin(url) == origin):
-                        candidates.append((t["targetId"], url))
-                except Exception:
+                if t.get("type") != "page":
                     continue
+                try:
+                    concrete = browser_url_origin(url)
+                except ValueError:
+                    continue
+                if (not origin or concrete == origin) and (origin_matches is None or origin_matches(concrete)):
+                    candidates.append((t["targetId"], url))
             for target_id, url in candidates:
                 sid = await _attach(target_id)
                 if accept:

@@ -137,20 +137,30 @@ it('a late list response from profile A never paints under profile B', async () 
 })
 
 it('vault.add secrets never enter the mutation cache', async () => {
-  respond = async (_profile, method) =>
-    method === 'vault.sources' ? { sources } : method === 'vault.list' ? { items: [] } : { id: 'created' }
+  respond = async (_profile, method) => {
+    if (method === 'gateway.capabilities') {
+      return { vault_origin_rules: true }
+    }
+
+    return method === 'vault.sources' ? { sources } : method === 'vault.list' ? { items: [] } : { id: 'created' }
+  }
+
   const view = mount()
   fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
+  await screen.findByLabelText(/^Additional exact origins/)
 
   for (const [label, value] of [
     ['Label', 'fixture'],
     ['Site origin', 'https://example.com'],
+    [/^Additional exact origins/, 'https://www.example.com'],
+    [/^Wildcard origins/, 'https://*.example.com'],
     ['Identifier', 'fixture@example.com'],
     ['Password', 'fixture-retained-password']
   ] as const) {
     fireEvent.change(screen.getByLabelText(label), { target: { value } })
   }
 
+  fireEvent.click(screen.getByRole('checkbox', { name: 'I trust every matching subdomain to receive this password.' }))
   fireEvent.click(screen.getByRole('button', { name: 'Save' }))
   await waitFor(() => expect(calls.some(c => c.method === 'vault.add')).toBe(true))
   expect((calls.find(c => c.method === 'vault.add')!.params.secret as Record<string, string>).password).toBe(

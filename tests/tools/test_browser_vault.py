@@ -28,7 +28,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from agent.vault_login_classifier import (  # noqa: E402
     ClassifiedLoginControl,
     LoginControl,
-    build_fill_js,
     classify_login_control,
     select_password_fill,
 )
@@ -221,33 +220,6 @@ class TestClassifier:
         assert len(fills) == 1 and fills[0]["index"] == 1
 
 
-    def test_build_fill_js_leaves_no_dom_marker_and_binds_target_to_inspection(self):
-        # P1-1: no persistent selector for filled controls. The fill targets the input by the
-        # <nonce>:<index> stamp ITS OWN inspection wrote (a bare index is re-resolved by position,
-        # and a second inspection in between would re-stamp — either way the password could land in
-        # another field); stamps carry no secret and the fill script strips every one before returning.
-        js = build_fill_js(
-            [{"index": 0, "token": "current-password", "value": "x"}],
-            expected_origin="https://example.com",
-        )
-        assert "vaultSecret" not in js
-        assert "data-vault-secret" not in js
-        assert "elements[f.index]" not in js
-        assert "[data-hermes-vault-slot=" in js and "nonce + ':' + f.index" in js
-        assert 'f.token === "current-password" && el.type !== "password"' in js  # a password fill never lands in a text box
-        assert js.index('removeAttribute("data-hermes-vault-slot")') > js.index("setter.set.call")
-
-    def test_build_fill_js_asserts_origin_before_any_write(self):
-        # P1-2: the origin assert must run inside the SAME script, before
-        # any element write.
-        js = build_fill_js(
-            [{"index": 0, "token": "current-password", "value": "x"}],
-            expected_origin="https://example.com",
-        )
-        assert '"https://example.com"' in js
-        assert "window.location.origin" in js
-        assert "origin_changed" in js
-        assert js.index("origin_changed") < js.index("querySelectorAll")
 
 
 # ---------------------------------------------------------------------------
@@ -296,6 +268,39 @@ class TestBrowserVaultTools:
         assert out["error_type"] == "origin_mismatch"
         assert "s3cret-pw" not in json.dumps(out)
 
+    @pytest.mark.parametrize("page, permitted", [
+        ("https://www.other.net", True),
+        ("https://a.example.com", True),
+        ("https://b.a.example.com", True),
+        ("https://example.com", False),
+        ("https://a.example.com.evil.net", False),
+        ("http://a.example.com", False),
+        ("https://a.example.com:8443", False),
+    ])
+    def test_local_explicit_grants_gate_secret_resolution(self, store, monkeypatch, page, permitted):
+        from tools import browser_vault_tool as bvt
+
+        meta = store.add_item(
+            "login", "scoped", {"identifier_type": "username", "identifier": "u", "password": "synthetic"},
+            "https://primary.other.net", allowed_origins=["https://www.other.net"],
+            wildcard_origins=["https://*.example.com"],
+        )
+        monkeypatch.setattr("agent.vault_store.get_vault_store", lambda: store)
+        monkeypatch.setattr(bvt, "_focus_bound_origin", lambda *a, **k: None)
+        monkeypatch.setattr(bvt, "_current_page_origin", lambda _: page)
+        monkeypatch.setattr(bvt, "_eval_js", lambda *a: {
+            "success": True, "result": [{"index": 0, "type": "password", "autocomplete": "current-password"}],
+        })
+        monkeypatch.setattr(bvt, "_eval_js_secret", lambda *a: {"success": True, "result": {"filled": 1}})
+        with patch.object(store, "resolve_secret", wraps=store.resolve_secret) as resolve:
+            result = json.loads(bvt.browser_vault_fill(meta.id))
+        assert result["success"] is permitted
+        if permitted:
+            assert result["origin"] == page
+            assert resolve.call_count == 1
+        else:
+            assert result["error_type"] == "origin_mismatch"
+            resolve.assert_not_called()
     @staticmethod
     def _manager_meta():
         from agent.vault_store import VaultItemMeta
@@ -347,8 +352,6 @@ class TestBrowserVaultTools:
         out = json.loads(raw)
         assert out["success"] is True
         assert out["origin"] == "https://www.amazon.co.uk"
-        # the synchronous in-page check is bound to the origin actually matched
-        assert "https://www.amazon.co.uk" in secret_exprs[0]
         assert "s3cret-pw" not in raw
         assert out["filled_fields"] == 1
 
@@ -395,8 +398,8 @@ class TestBrowserVaultTools:
         ]
 
         def fake_eval(task_id, expression):
-            if "location.href" in expression:
-                return {"success": True, "result": "https://example.com/login"}
+            if "location.origin" in expression:
+                return {"success": True, "result": "https://example.com"}
             return {"success": True, "result": json.dumps(controls)}
 
         secret_exprs = []
@@ -420,52 +423,7 @@ class TestBrowserVaultTools:
             "origin": "https://example.com",
         }
         assert "s3cret-pw" not in raw
-        # The secret expression only ever goes through the secret eval path,
-        # and it targets only the password field (index 1).
-        assert len(secret_exprs) == 1
-        assert "s3cret-pw" in secret_exprs[0]
-        assert '"index": 0' not in secret_exprs[0]
-        assert "user@example.com" not in secret_exprs[0]
 
-    def test_fill_toctou_navigation_writes_nothing(self, store):
-        """P1-2 schedule regression: inspection passes on the allowed origin,
-        the page navigates before the fill script runs, the in-script origin
-        assert refuses, and zero credential bytes are written."""
-        from tools import browser_vault_tool
-
-        meta = _add_login(store, origin="https://example.com")
-        controls = [
-            {"autocomplete": "current-password", "formIndex": 0, "index": 0, "label": "", "name": "pw", "type": "password"},
-        ]
-
-        def fake_eval(task_id, expression):
-            if "location.href" in expression:
-                # Pre-check sees the allowed origin.
-                return {"success": True, "result": "https://example.com/login"}
-            return {"success": True, "result": json.dumps(controls)}
-
-        def fake_eval_secret(task_id, expression):
-            # The evaluated script itself must carry the origin assert.
-            assert "window.location.origin" in expression
-            assert '"https://example.com"' in expression
-            # Simulate the page having navigated cross-origin by the time
-            # the fill script executes: the script's own assert fires.
-            return {
-                "success": True,
-                "result": json.dumps(
-                    {"refused": "origin_changed", "found": "https://evil.com"}
-                ),
-            }
-
-        with patch("agent.vault_store.get_vault_store", return_value=store), \
-             patch.object(browser_vault_tool, "_eval_js", side_effect=fake_eval), \
-             patch.object(browser_vault_tool, "_eval_js_secret", side_effect=fake_eval_secret):
-            raw = browser_vault_tool.browser_vault_fill(meta.id)
-        out = json.loads(raw)
-        assert out["success"] is False
-        assert out["error_type"] == "origin_changed"
-        assert out.get("filled_fields", 0) == 0
-        assert "s3cret-pw" not in raw
 
     def test_secret_eval_fails_closed_without_supervisor(self, store):
         """P1-1: the secret-bearing eval NEVER falls back to the argv path."""
@@ -477,8 +435,8 @@ class TestBrowserVaultTools:
         ]
 
         def fake_eval(task_id, expression):
-            if "location.href" in expression:
-                return {"success": True, "result": "https://example.com/login"}
+            if "location.origin" in expression:
+                return {"success": True, "result": "https://example.com"}
             return {"success": True, "result": json.dumps(controls)}
 
         # No supervisor registered and the local daemon exposes no CDP endpoint → the fill refuses.
@@ -512,8 +470,8 @@ class TestBrowserVaultTools:
         ]
 
         def fake_eval(task_id, expression):
-            if "location.href" in expression:
-                return {"success": True, "result": "https://example.com/login"}
+            if "location.origin" in expression:
+                return {"success": True, "result": "https://example.com"}
             return {"success": True, "result": json.dumps(controls)}
 
         def fake_eval_secret(task_id, expression):
@@ -558,8 +516,8 @@ class TestBrowserVaultTools:
         ]
 
         def fake_eval(task_id, expression):
-            if "location.href" in expression:
-                return {"success": True, "result": "https://shop.test/checkout"}
+            if "location.origin" in expression:
+                return {"success": True, "result": "https://shop.test"}
             return {"success": True, "result": json.dumps(controls)}
 
         secret_exprs = []

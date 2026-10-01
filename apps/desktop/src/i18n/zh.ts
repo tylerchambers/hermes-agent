@@ -640,6 +640,16 @@ export const zh = defineLocale({
       vault: '密码与登录'
     },
     vault: {
+      editOrigins: '编辑来源',
+      editOriginsTitle: '编辑登录来源',
+      originsSaved: '登录来源已更新。',
+      additionalOriginsField: '其他精确来源',
+      additionalOriginsHint: '每行一个 URL。仅允许完全匹配这些来源的网站。',
+      wildcardOriginsField: '通配符来源',
+      wildcardOriginsHint: '使用 https://*.example.com。匹配指定端口的子域名，但不包含 example.com 本身。',
+      wildcardWarning: '所有匹配的子域名都能接收此密码。仅对您信任的域名启用，包括其委派给他人的子域名。',
+      wildcardAcknowledgement: '我信任所有匹配的子域名接收此密码。',
+      wildcardBadge: '通配符',
       title: '密码与登录',
       blurb:
         '说一句“登录 GitHub”，智能体就会代你登录。第一次遇到登录页时它会当场向你要登录信息，之后就自动完成。密码在本机加密保存并直接填入页面——模型永远看不到。',

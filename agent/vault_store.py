@@ -26,7 +26,7 @@ from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 from urllib.parse import urlsplit
 
 from hermes_constants import get_hermes_home
@@ -167,10 +167,9 @@ class VaultItemMeta:
     identifier_type: Optional[str] = None
     identifier: Optional[str] = None
     has_otp: bool = False  # a TOTP seed is stored: 2FA codes can be minted without asking the user
-    # Every origin the password manager bound to this item (manager backends only;
-    # ``origin`` is the first/primary one). Fill matching stays exact-origin against
-    # this list — no wildcard or subdomain inference is ever derived from it.
-    allowed_origins: tuple = ()
+    # Exact grants never imply aliases or subdomains, including manager imports.
+    allowed_origins: tuple[str, ...] = ()
+    wildcard_origins: tuple[str, ...] = ()
 
     def to_dict(self) -> Dict[str, Any]:
         out = {
@@ -187,6 +186,8 @@ class VaultItemMeta:
             out["has_otp"] = True
         if len(self.allowed_origins) > 1:
             out["allowed_origins"] = list(self.allowed_origins)
+        if self.wildcard_origins:
+            out["wildcard_origins"] = list(self.wildcard_origins)
         return out
 
 
@@ -307,6 +308,9 @@ class VaultStore:
         label: str,
         secret: Dict[str, Any],
         origin: Optional[str] = None,
+        *,
+        allowed_origins: Sequence[str] | None = None,
+        wildcard_origins: Sequence[str] | None = None,
     ) -> VaultItemMeta:
         """Add an item. ``secret`` is the sensitive payload (encrypted at rest).
 
@@ -329,7 +333,13 @@ class VaultStore:
         if kind == "login":
             if not origin:
                 raise VaultError("origin is required for login items")
-            norm_origin = normalize_origin(origin)
+            try:
+                from agent.vault_origins import normalize_login_rules
+                norm_origin, allowed_origins, wildcard_origins = normalize_login_rules(
+                    origin, allowed_origins, wildcard_origins,
+                )
+            except ValueError as exc:
+                raise VaultError(str(exc)) from None
             id_type = secret.pop("identifier_type", None)
             if id_type not in LOGIN_IDENTIFIER_TYPES:
                 raise VaultError(
@@ -344,6 +354,11 @@ class VaultStore:
             otp_secret = normalize_otp_secret(str(secret.get("otp_secret") or ""))
             secret = {"password": secret["password"], **({"otp_secret": otp_secret} if otp_secret else {})}
         else:
+            for field, values in (("allowed_origins", allowed_origins), ("wildcard_origins", wildcard_origins)):
+                if values is not None and (not isinstance(values, Sequence) or isinstance(values, (str, bytes))):
+                    raise VaultError(f"{field}: expected an array")
+                if values:
+                    raise VaultError("Origin rules are supported only for login items")
             allowed = PAYMENT_FIELDS if kind == "payment" else ADDRESS_FIELDS
             secret = {k: str(v) for k, v in secret.items() if k in allowed and str(v or "").strip()}
             missing = [f for f in REQUIRED_FIELDS[kind] if f not in secret]
@@ -363,11 +378,41 @@ class VaultStore:
             "identifier": identifier,
             "secret": dict(secret),
         }
+        if kind == "login":
+            record["allowed_origins"] = list(allowed_origins)
+            record["wildcard_origins"] = list(wildcard_origins)
         with self._locked():
             items = self._read_all()
             items.append(record)
             self._write_all(items)
         return self._meta(record)
+
+    def update_origin_rules(
+        self, item_id: str, *, origin: str,
+        allowed_origins: Sequence[str], wildcard_origins: Sequence[str],
+    ) -> VaultItemMeta:
+        """Replace only a local login's destination permissions, under the vault lock."""
+        from agent.vault_origins import normalize_login_rules
+
+        with self._locked():
+            items = self._read_all()
+            record = next((rec for rec in items if rec.get("id") == item_id), None)
+            if record is None or not item_id.startswith("vault_"):
+                raise VaultError("No local vault item with this handle")
+            if record.get("kind") != "login":
+                raise VaultError("Origin rules are supported only for login items")
+            if allowed_origins is None or wildcard_origins is None:
+                raise VaultError("Origin rule replacement requires both arrays")
+            try:
+                primary, exact, wildcards = normalize_login_rules(
+                    origin, allowed_origins, wildcard_origins,
+                )
+            except ValueError as exc:
+                raise VaultError(str(exc)) from None
+            record.update(origin=primary, allowed_origins=list(exact), wildcard_origins=list(wildcards))
+            meta = self._meta(record)
+            self._write_all(items)
+            return meta
 
     def list_items(self) -> List[VaultItemMeta]:
         """Metadata-only listing. Secret payloads are never included."""
@@ -412,6 +457,18 @@ class VaultStore:
     @staticmethod
     def _meta(rec: Dict[str, Any]) -> VaultItemMeta:
         identifier = rec.get("identifier")
+        exact, wildcards = (), ()
+        if rec.get("kind") == "login":
+            for field, default in (("allowed_origins", [rec.get("origin")]), ("wildcard_origins", [])):
+                values = rec.get(field, default)
+                if not isinstance(values, list) or any(not isinstance(v, str) or not v.strip() for v in values):
+                    raise VaultError(f"{field}: stored origin rules must be an array of nonblank strings")
+                if field == "allowed_origins":
+                    if not values:
+                        raise VaultError("allowed_origins: stored exact grants must not be empty")
+                    exact = tuple(values)
+                else:
+                    wildcards = tuple(values)
         return VaultItemMeta(
             id=str(rec.get("id", "")),
             kind=str(rec.get("kind", "")),
@@ -421,6 +478,8 @@ class VaultStore:
             identifier_type=rec.get("identifier_type") if identifier else None,
             identifier=identifier or None,
             has_otp=bool((rec.get("secret") or {}).get("otp_secret")),
+            allowed_origins=exact,
+            wildcard_origins=wildcards,
         )
 
 

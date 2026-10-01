@@ -156,6 +156,8 @@ def _(rid, params: dict) -> dict:
             label=str(params.get("label") or ""),
             origin=(str(params.get("origin")) if params.get("origin") else None),
             secret=secret,
+            allowed_origins=params.get("allowed_origins"),
+            wildcard_origins=params.get("wildcard_origins"),
         )
         return _ok(rid, {"id": meta.id})
     except VaultError as e:
@@ -163,6 +165,28 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5095, scrub_secret_from_text(str(e), secret))
     except Exception as e:
         return _err(rid, 5095, scrub_secret_from_text(str(e), secret))
+
+
+@method("vault.update_origins")
+@_profile_scoped
+def _(rid, params: dict) -> dict:
+    """Replace destination metadata only; omitted arrays must never revoke grants."""
+    from agent.vault_store import get_vault_store
+
+    for field in ("id", "origin"):
+        if not isinstance(params.get(field), str) or not params[field].strip():
+            return _err(rid, 5095, f"{field}: a nonblank string is required")
+    for field in ("allowed_origins", "wildcard_origins"):
+        if not isinstance(params.get(field), list):
+            return _err(rid, 5095, f"{field}: an array is required")
+    try:
+        meta = get_vault_store().update_origin_rules(
+            params["id"], origin=params["origin"],
+            allowed_origins=params["allowed_origins"], wildcard_origins=params["wildcard_origins"],
+        )
+        return _ok(rid, {"id": meta.id})
+    except Exception as exc:
+        return _err(rid, 5095, str(exc))
 
 
 @method("vault.remove")

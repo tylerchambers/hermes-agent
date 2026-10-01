@@ -1057,7 +1057,7 @@
         {
           "name": "params",
           "schema": {
-            "$ref": "#/components/schemas/PingParams"
+            "$ref": "#/components/schemas/ProfileParams"
           }
         }
       ],
@@ -4341,6 +4341,24 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/VaultUnlockResult"
+        }
+      }
+    },
+    {
+      "name": "vault.update_origins",
+      "summary": "Replace a local login's origin permissions without reading or changing its secrets.",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/VaultUpdateOriginsParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/VaultAddResult"
         }
       }
     },
@@ -14061,6 +14079,11 @@
         "properties": {
           "per_session_exclusive_submit": {
             "title": "Per Session Exclusive Submit",
+            "type": "boolean"
+          },
+          "vault_origin_rules": {
+            "default": false,
+            "title": "Vault Origin Rules",
             "type": "boolean"
           }
         },
@@ -37131,6 +37154,36 @@
             ],
             "default": null,
             "title": "Secret"
+          },
+          "allowed_origins": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Allowed Origins"
+          },
+          "wildcard_origins": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Wildcard Origins"
           }
         },
         "title": "VaultAddParams",
@@ -37260,6 +37313,20 @@
           "backend": {
             "title": "Backend",
             "type": "string"
+          },
+          "allowed_origins": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Origins",
+            "type": "array"
+          },
+          "wildcard_origins": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Wildcard Origins",
+            "type": "array"
           }
         },
         "required": [
@@ -37606,6 +37673,53 @@
           "name"
         ],
         "title": "VaultUnlockResult",
+        "type": "object"
+      },
+      "VaultUpdateOriginsParams": {
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "allowed_origins": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Origins",
+            "type": "array"
+          },
+          "wildcard_origins": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Wildcard Origins",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "origin",
+          "allowed_origins",
+          "wildcard_origins"
+        ],
+        "title": "VaultUpdateOriginsParams",
         "type": "object"
       },
       "VerificationEvidenceRow": {

@@ -543,6 +543,18 @@ export const ja = defineLocale({
       vault: 'パスワードとログイン'
     },
     vault: {
+      editOrigins: 'オリジンを編集',
+      editOriginsTitle: 'ログインのオリジンを編集',
+      originsSaved: 'ログインのオリジンを更新しました。',
+      additionalOriginsField: '追加の完全一致オリジン',
+      additionalOriginsHint: '1 行に 1 つの URL を入力します。これらのオリジンとの完全一致のみ許可されます。',
+      wildcardOriginsField: 'ワイルドカードオリジン',
+      wildcardOriginsHint:
+        'https://*.example.com を使用します。指定したポートのサブドメインに一致しますが、example.com 自体には一致しません。',
+      wildcardWarning:
+        '一致するすべてのサブドメインにこのパスワードを入力できます。委任されたサブドメインも含め、信頼できるドメインに対してのみ有効にしてください。',
+      wildcardAcknowledgement: '一致するすべてのサブドメインにこのパスワードを入力することを許可し、信頼します。',
+      wildcardBadge: 'ワイルドカード',
       title: 'パスワードとログイン',
       blurb:
         '「GitHub にログインして」と言えば、エージェントが代わりにサインインします。初めてサインインページに出会ったときにその場でログイン情報を尋ね、以降は自動で処理します。パスワードはこのマシン上で暗号化され、ページに直接入力されます。モデルは一切見ません。',
