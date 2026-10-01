@@ -10,40 +10,84 @@ _UNAVAILABLE = "Wildcard origin validation is unavailable; run hermes pm repair.
 
 
 def normalize_web_origin(value: str) -> str:
-    """Normalize an explicit HTTP(S) URL without broadening its origin."""
+    """Canonicalize an exact HTTP(S) credential grant.
+
+    Full URLs are accepted, but only their scheme, host and port define the
+    grant. Ambiguous authorities are rejected rather than repaired so Python
+    and the browser cannot disagree about where a credential may be sent.
+    Wildcard grants are validated separately by ``normalize_wildcard_origin``;
+    browser-reported page URLs are handled by ``browser_url_origin``.
+
+    Args:
+        value: An explicit HTTP(S) origin or URL. Surrounding whitespace is
+            ignored; embedded whitespace, controls, backslashes and wildcards
+            are forbidden.
+
+    Returns:
+        A ``scheme://host[:port]`` origin with a canonical IP address or lowercase
+        ASCII IDNA hostname. Default ports and URL paths, queries and fragments
+        are omitted. A trailing DNS dot is retained as a distinct origin.
+
+    Raises:
+        ValueError: The value is blank, is not a string, or contains an invalid,
+            unsupported or ambiguous scheme, authority, hostname or port.
+    """
+    # Permit harmless copy/paste padding, but never infer a missing destination.
     if not isinstance(value, str) or not value.strip():
         raise ValueError("origin: expected a nonblank URL")
     value = value.strip()
+    # urlsplit can discard controls; browsers also treat backslashes as URL
+    # separators. Reject these before parsing rather than silently changing the
+    # grant. A wildcard must go through the separate, explicit permission path.
     if any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in value):
         raise ValueError("origin: whitespace or control characters are forbidden")
     if "\\" in value or "*" in value:
         raise ValueError("origin: backslashes and wildcards are forbidden")
     try:
         parsed = urlsplit(value)
+        # Grants must name an explicit web origin: no inferred scheme, relative
+        # URL or non-web protocol may become a credential destination.
         if parsed.scheme not in ("http", "https") or not parsed.netloc or not parsed.hostname:
             raise ValueError
+        # Userinfo can disguise the destination, and browsers decode escaped
+        # host bytes differently from urlsplit. Neither belongs in a grant.
         if "@" in parsed.netloc or "%" in parsed.netloc:
             raise ValueError
+        # Reading .port validates its range. A dangling colon must not silently
+        # acquire the default port and turn malformed input into a valid grant.
         port = parsed.port
         host = parsed.hostname
         if parsed.netloc.endswith(":"):
             raise ValueError
         if parsed.netloc.startswith("[") or ":" in host:
+            # Equivalent IPv6 spellings should compare equally; brackets keep
+            # the address's colons distinct from the optional port separator.
             host = f"[{ipaddress.IPv6Address(host).compressed}]"
         else:
             try:
+                # Use strict dotted-decimal IPv4, not a browser's permissive
+                # shorthand, octal or hexadecimal interpretation.
                 host = str(ipaddress.IPv4Address(host))
             except ValueError:
+                # Non-transitional UTS #46 preserves distinctions such as ß
+                # versus ss while producing the ASCII host used for matching.
+                # Do not remove a trailing DNS dot: it remains a separate grant.
                 host = idna.encode(host, uts46=True, transitional=False, std3_rules=True).decode("ascii").lower()
-                # Numeric-looking noncanonical IPs have different browser URL semantics.
+                # A numeric final label can make a browser interpret this as
+                # IPv4 even though the strict IP parser rejected it. Fail closed
+                # instead of treating that alternate IP spelling as a DNS name.
                 last_label = host.rstrip(".").split(".")[-1]
                 if last_label.isdigit() or (
                     last_label.startswith("0x") and all(c in "0123456789abcdef" for c in last_label[2:])
                 ):
                     raise ValueError
+        # Only default ports are equivalent to omission. Retain other ports and
+        # discard URL suffixes because permissions are scoped to origins.
         default = 443 if parsed.scheme == "https" else 80
         return f"{parsed.scheme}://{host}" + (f":{port}" if port is not None and port != default else "")
     except (ValueError, UnicodeError):
+        # Parser errors may echo input (including accidental userinfo); expose
+        # one metadata-safe error without the original exception's details.
         raise ValueError("origin: invalid HTTP(S) host, authority or port") from None
 
 
